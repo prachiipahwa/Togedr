@@ -8,7 +8,7 @@ import MatchModal from '../components/MatchModal';
 
 const TogedrMomentPage = () => {
   const { id: activityId } = useParams();
-  const { user } = useAuth();
+  const { user, markMomentAsComplete } = useAuth();
   const [participants, setParticipants] = useState([]);
   const [loading, setLoading] = useState(true);
   const [matchInfo, setMatchInfo] = useState({ show: false, user: null, chatRoomId: null });
@@ -29,7 +29,14 @@ const TogedrMomentPage = () => {
     };
     fetchParticipants();
   }, [activityId, user._id]);
-  
+
+  useEffect(() => {
+    // When currentIndex becomes -1, the last card was just swiped
+    if (currentIndex === -1) {
+      markMomentAsComplete(activityId);
+    }
+  }, [currentIndex, activityId, markMomentAsComplete]);
+
   const childRefs = useMemo(() =>
     Array(participants.length).fill(0).map(() => React.createRef()),
   [participants]);
@@ -39,8 +46,7 @@ const TogedrMomentPage = () => {
       await childRefs[currentIndex].current.swipe(dir);
     }
   };
-  
-  // This is now the single source of truth for swipe logic
+
   const handleApiSwipe = async (direction, swipedUser, index) => {
     setCurrentIndex(index - 1);
     const decision = direction === 'right' ? 'yes' : 'no';
@@ -61,7 +67,7 @@ const TogedrMomentPage = () => {
   const closeMatchModal = () => {
     setMatchInfo({ show: false, user: null, chatRoomId: null });
   };
-  
+
   if (loading) return <div className="text-center p-8">Loading...</div>;
 
   return (
@@ -103,10 +109,10 @@ const TogedrMomentPage = () => {
       </div>
       
       {currentIndex >= 0 && (
-          <div className="flex justify-center space-x-6 mt-8">
-            <button onClick={() => swipe('left')} className="bg-red-100 text-red-600 rounded-full h-20 w-20 flex items-center justify-center text-4xl font-bold hover:bg-red-200">✗</button>
-            <button onClick={() => swipe('right')} className="bg-green-100 text-green-600 rounded-full h-20 w-20 flex items-center justify-center text-4xl font-bold hover:bg-green-200">✓</button>
-          </div>
+        <div className="flex justify-center space-x-6 mt-8">
+          <button onClick={() => swipe('left')} className="bg-red-100 text-red-600 rounded-full h-20 w-20 flex items-center justify-center text-4xl font-bold hover:bg-red-200">✗</button>
+          <button onClick={() => swipe('right')} className="bg-green-100 text-green-600 rounded-full h-20 w-20 flex items-center justify-center text-4xl font-bold hover:bg-green-200">✓</button>
+        </div>
       )}
     </div>
   );

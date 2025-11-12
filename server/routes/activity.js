@@ -1,11 +1,10 @@
 const express = require('express');
 const router = express.Router();
-const { createActivity, getActivities, getActivityById, joinActivity, leaveActivity, completeActivity,cancelActivity, getAllActivities, getForYouActivities, updateActivity, deleteActivity } = require('../controllers/activityController');
-const { protect } = require('../middleware/authMiddleware');
+const { createActivity, getActivities, getActivityById, joinActivity, leaveActivity, completeActivity, cancelActivity, getAllActivities, getForYouActivities, updateActivity, deleteActivity } = require('../controllers/activityController');
 
-// Notice how 'protect' is placed before 'createActivity'.
-// This ensures only logged-in users can access this route.
-// router.post('/', protect, createActivity);
+// --- MODIFIED: Import both 'protect' and 'authOptional' ---
+const { protect, authOptional } = require('../middleware/authMiddleware');
+
 router.route('/')
   .get(getActivities)
   .post(protect, createActivity);
@@ -17,9 +16,9 @@ router.route('/all')
 router.route('/foryou')
   .get(protect, getForYouActivities);
   
-// Route to get a single activity by its ID
+// --- MODIFIED: Use authOptional for the public-facing 'get' route ---
 router.route('/:id')
-  .get(getActivityById)
+  .get(authOptional, getActivityById) // <-- This route now optionally has req.user
   .put(protect, updateActivity)
   .delete(protect, deleteActivity);
 

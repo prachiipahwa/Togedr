@@ -1,6 +1,7 @@
 const Swipe = require('../models/Swipe');
 const Activity = require('../models/Activity');
 const ChatRoom = require('../models/ChatRoom');
+const User = require('../models/User'); // <-- ADD THIS LINE
 
 // @desc    Submit a swipe decision and check for a match
 // @route   POST /api/swipes
@@ -59,6 +60,29 @@ exports.submitSwipe = async (req, res) => {
     if (error.code === 11000) {
       return res.status(400).json({ message: 'You have already swiped on this user for this activity' });
     }
+    res.status(500).json({ message: 'Server Error', error: error.message });
+  }
+};
+
+// --- NEW FUNCTION ---
+
+// @desc    Mark a Togedr Moment as completed for a user
+// @route   POST /api/swipes/complete
+// @access  Private
+exports.markMomentAsComplete = async (req, res) => {
+  const { activityId } = req.body;
+  const userId = req.user._id;
+
+  try {
+    // Use $addToSet to add the activityId to the completedMoments array.
+    // $addToSet prevents duplicate entries, so it's safe to call multiple times.
+    await User.findByIdAndUpdate(userId, {
+      $addToSet: { completedMoments: activityId },
+    });
+
+    res.status(200).json({ message: 'Activity marked as completed for user' });
+
+  } catch (error) {
     res.status(500).json({ message: 'Server Error', error: error.message });
   }
 };

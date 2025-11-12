@@ -6,7 +6,11 @@ const ChatRoom = require('../models/ChatRoom');
 // @access  Private
 exports.createActivity = async (req, res) => {
   try {
-    const { title, description, tag, time, location, locationName, imageUrl } = req.body;
+    // --- MODIFIED: Destructure new visibility fields ---
+    const { 
+      title, description, tag, time, location, locationName, imageUrl,
+      visibility, invitedUsers 
+    } = req.body;
     
     const newChatRoom = await ChatRoom.create({
       participants: [req.user._id],
@@ -17,6 +21,8 @@ exports.createActivity = async (req, res) => {
       creator: req.user._id,
       members: [req.user._id],
       chatRoomID: newChatRoom._id,
+      visibility: visibility || 'public', // <-- ADDED
+      invitedUsers: invitedUsers || [],   // <-- ADDED
     });
 
     newChatRoom.activityId = activity._id;
@@ -39,6 +45,7 @@ exports.getActivities = async (req, res) => {
     }
     const activities = await Activity.find({
       status: 'upcoming',
+      visibility: 'public', // <-- MODIFIED: Only show public activities
       location: {
         $near: {
           $geometry: { type: 'Point', coordinates: [parseFloat(lng), parseFloat(lat)] },
@@ -57,7 +64,9 @@ exports.getActivities = async (req, res) => {
 // @access  Public
 exports.getAllActivities = async (req, res) => {
   try {
-    const activities = await Activity.find({})
+    const activities = await Activity.find({
+      visibility: 'public' // <-- MODIFIED: Only show public activities
+    })
       .sort({ createdAt: -1 })
       .populate('creator', 'name profilePictureUrl')
       .populate('members', 'name');
@@ -69,13 +78,30 @@ exports.getAllActivities = async (req, res) => {
 
 // @desc    Get a single activity by its ID
 // @route   GET /api/activities/:id
-// @access  Public
+// @access  Public (with authOptional)
 exports.getActivityById = async (req, res) => {
   try {
-    const activity = await Activity.findById(req.params.id).populate('creator', 'name profilePictureUrl').populate('members', 'name profilePictureUrl');
+    const activity = await Activity.findById(req.params.id)
+      .populate('creator', 'name profilePictureUrl')
+      .populate('members', 'name profilePictureUrl');
+      
     if (!activity) {
       return res.status(404).json({ message: 'Activity not found' });
     }
+
+    // --- MODIFIED: Check for private activity ---
+    if (activity.visibility === 'private') {
+      const userId = req.user ? req.user._id.toString() : null;
+      const creatorId = activity.creator._id.toString();
+      const isInvited = activity.invitedUsers.some(id => id.toString() === userId);
+
+      // User must be logged in AND (be the creator OR be on the invite list)
+      if (!userId || (userId !== creatorId && !isInvited)) {
+        return res.status(403).json({ message: 'You are not authorized to view this activity' });
+      }
+    }
+    // --- End of modification ---
+
     res.json(activity);
   } catch (error) {
     res.status(500).json({ message: 'Server Error', error: error.message });
@@ -91,9 +117,24 @@ exports.joinActivity = async (req, res) => {
     if (!activity) {
       return res.status(404).json({ message: 'Activity not found' });
     }
+
+    // --- MODIFIED: Check visibility before joining ---
+    if (activity.visibility === 'private') {
+      const userId = req.user._id.toString();
+      const creatorId = activity.creator.toString();
+      const isInvited = activity.invitedUsers.some(id => id.toString() === userId);
+      
+      // Allow creator or invited users to join
+      if (userId !== creatorId && !isInvited) {
+         return res.status(403).json({ message: 'This is a private activity and you are not invited.' });
+      }
+    }
+    // --- End of modification ---
+
     if (activity.members.includes(req.user._id)) {
       return res.status(400).json({ message: 'Already a member' });
     }
+    
     activity.members.push(req.user._id);
     await ChatRoom.findByIdAndUpdate(activity.chatRoomID, {
       $addToSet: { participants: req.user._id }
@@ -176,13 +217,20 @@ exports.getForYouActivities = async (req, res) => {
     if (!user.interests || user.interests.length === 0) {
       return res.json([]);
     }
+    
+    // --- MODIFIED: Query now also finds private activities user is invited to ---
     const recommendedActivities = await Activity.find({
       status: 'upcoming',
       tag: { $in: user.interests },
-      creator: { $ne: user._id }
+      creator: { $ne: user._id },
+      $or: [
+        { visibility: 'public' },
+        { invitedUsers: user._id }
+      ]
     })
     .sort({ createdAt: -1 })
     .populate('creator', 'name profilePictureUrl');
+    
     res.json(recommendedActivities);
   } catch (error) {
     res.status(500).json({ message: 'Server Error', error: error.message });
@@ -205,7 +253,11 @@ exports.updateActivity = async (req, res) => {
       return res.status(401).json({ message: 'User not authorized' });
     }
 
-    const { title, description, tag, time, location, locationName, imageUrl } = req.body;
+    // --- MODIFIED: Allow updating visibility settings ---
+    const { 
+      title, description, tag, time, location, locationName, imageUrl,
+      visibility, invitedUsers
+    } = req.body;
     
     activity.title = title || activity.title;
     activity.description = description || activity.description;
@@ -214,6 +266,8 @@ exports.updateActivity = async (req, res) => {
     activity.location = location || activity.location;
     activity.locationName = locationName || activity.locationName;
     activity.imageUrl = imageUrl || activity.imageUrl;
+    activity.visibility = visibility || activity.visibility; // <-- ADDED
+    activity.invitedUsers = invitedUsers || activity.invitedUsers; // <-- ADDED
 
     const updatedActivity = await activity.save();
     res.json(updatedActivity);

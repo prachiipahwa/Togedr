@@ -40,7 +40,7 @@ exports.updateUserProfile = async (req, res) => {
         bio: updatedUser.bio,
         interests: updatedUser.interests,
         profilePictureUrl: updatedUser.profilePictureUrl,
-        token: req.token, // <-- THIS IS THE CRUCIAL PART
+        token: req.token,
       });
     } else {
       res.status(404).json({ message: 'User not found' });
@@ -67,5 +67,37 @@ exports.getPublicUserProfile = async (req, res) => {
     res.json({ user, activities });
   } catch (error) {
     res.status(500).json({ message: 'Server Error' });
+  }
+};
+
+// --- NEW FUNCTION ---
+
+// @desc    Search for users by name or email
+// @route   GET /api/users/search
+// @access  Private
+exports.searchUsers = async (req, res) => {
+  const query = req.query.q;
+
+  if (!query) {
+    return res.status(400).json({ message: 'Search query is required' });
+  }
+
+  try {
+    // Create a case-insensitive regex for the search
+    const searchRegex = new RegExp(query, 'i');
+
+    const users = await User.find({
+      _id: { $ne: req.user._id }, // Exclude the user themselves
+      $or: [
+        { name: searchRegex },
+        { email: searchRegex } // Search by email but don't return it
+      ]
+    })
+    .select('name profilePictureUrl') // Only return public-safe data
+    .limit(10); // Limit to 10 results
+
+    res.json(users);
+  } catch (error) {
+    res.status(500).json({ message: 'Server Error', error: error.message });
   }
 };

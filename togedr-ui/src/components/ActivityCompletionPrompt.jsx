@@ -1,9 +1,14 @@
 // src/components/ActivityCompletionPrompt.jsx
 import React from 'react';
 import { Link } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext'; 
 
 const ActivityCompletionPrompt = ({ activity, onClose }) => {
-  if (!activity) return null;
+  const { user } = useAuth(); 
+  if (!activity || !user) return null;
+
+  const hasCompleted = user.completedMoments?.includes(activity._id);
+  if (hasCompleted) return null;
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">

@@ -1,10 +1,11 @@
 // src/pages/PostActivityPage.jsx
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react'; // Added useCallback
 import { useNavigate } from 'react-router-dom';
 import { MapContainer, TileLayer, Marker, useMap, useMapEvents } from 'react-leaflet';
 import axios from 'axios';
 import api from '../services/api';
 
+// --- (MapEventsAndMarker component remains the same) ---
 function MapEventsAndMarker({ location, onPositionChange, onAddressChange }) {
   const map = useMap();
   useEffect(() => {
@@ -12,6 +13,7 @@ function MapEventsAndMarker({ location, onPositionChange, onAddressChange }) {
       map.flyTo([location.lat, location.lng], 15);
     }
   }, [location, map]);
+
   useMapEvents({
     async click(e) {
       const { lat, lng } = e.latlng;
@@ -39,6 +41,13 @@ const PostActivityPage = () => {
   const [isPrivate, setIsPrivate] = useState(false);
   const [imageUrl, setImageUrl] = useState('');
   const [isUploading, setIsUploading] = useState(false);
+
+  // --- NEW STATE FOR INVITES ---
+  const [inviteQuery, setInviteQuery] = useState('');
+  const [searchResults, setSearchResults] = useState([]);
+  const [invitedUsers, setInvitedUsers] = useState([]);
+  const debounceTimeout = useRef(null);
+  // -----------------------------
 
   const handleManualLocationSearch = async () => {
     if (!locationText) return;
@@ -78,6 +87,48 @@ const PostActivityPage = () => {
     }
   };
 
+  // --- NEW FUNCTIONS for user search and invites ---
+
+  // Debounced search function
+  const searchUsers = useCallback(async (query) => {
+    if (query.length < 2) {
+      setSearchResults([]);
+      return;
+    }
+    try {
+      const { data } = await api.get(`/users/search?q=${query}`);
+      // Filter out users who are already invited
+      const newResults = data.filter(user => 
+        !invitedUsers.find(invited => invited._id === user._id)
+      );
+      setSearchResults(newResults);
+    } catch (err) {
+      console.error("User search failed", err);
+    }
+  }, [invitedUsers]); // Re-create if invitedUsers changes
+
+  const handleSearchChange = (e) => {
+    const query = e.target.value;
+    setInviteQuery(query);
+    if (debounceTimeout.current) {
+      clearTimeout(debounceTimeout.current);
+    }
+    debounceTimeout.current = setTimeout(() => {
+      searchUsers(query);
+    }, 300); // 300ms debounce
+  };
+
+  const addUserToInviteList = (user) => {
+    setInvitedUsers([...invitedUsers, user]);
+    setInviteQuery('');
+    setSearchResults([]);
+  };
+
+  const removeUserFromInviteList = (userId) => {
+    setInvitedUsers(invitedUsers.filter(user => user._id !== userId));
+  };
+  // --------------------------------------------------
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!location) {
@@ -86,13 +137,24 @@ const PostActivityPage = () => {
     }
     setError('');
     try {
+      // --- MODIFIED: Add invitedUsers to the payload ---
+      const invitedUserIds = invitedUsers.map(user => user._id);
+
       const activityData = {
-        title, description, tag, time, imageUrl, locationName: locationText, isPrivate,
+        title, 
+        description, 
+        tag, 
+        time, 
+        imageUrl, 
+        locationName: locationText, 
+        visibility: isPrivate ? 'private' : 'public',
+        invitedUsers: invitedUserIds, // <-- ADDED
         location: {
           type: 'Point',
           coordinates: [location.lng, location.lat]
         }
       };
+      
       const response = await api.post('/activities', activityData);
       navigate(`/activity/${response.data._id}`);
     } catch (err) {
@@ -135,6 +197,58 @@ const PostActivityPage = () => {
           </div>
         </div>
 
+        {/* --- NEW CONDITIONAL UI FOR INVITES --- */}
+        {isPrivate && (
+          <div className="relative">
+            <label className="block text-sm font-medium text-gray-700">Invite Users</label>
+            <input
+              type="text"
+              value={inviteQuery}
+              onChange={handleSearchChange}
+              placeholder="Search by name or email..."
+              className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md"
+            />
+            {/* Search Results Dropdown */}
+            {searchResults.length > 0 && (
+              <div className="absolute z-10 w-full bg-white border border-gray-300 rounded-md shadow-lg mt-1 max-h-48 overflow-y-auto">
+                {searchResults.map(user => (
+                  <div
+                    key={user._id}
+                    onClick={() => addUserToInviteList(user)}
+                    className="flex items-center p-3 hover:bg-gray-100 cursor-pointer"
+                  >
+                    <img src={user.profilePictureUrl} alt={user.name} className="w-8 h-8 rounded-full mr-3" />
+                    <span>{user.name}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+            
+            {/* Invited Users List */}
+            {invitedUsers.length > 0 && (
+              <div className="mt-4 space-y-2">
+                <h4 className="text-xs font-semibold text-gray-500 uppercase">Invited</h4>
+                {invitedUsers.map(user => (
+                  <div key={user._id} className="flex items-center justify-between bg-gray-50 p-2 rounded-md">
+                    <div className="flex items-center">
+                      <img src={user.profilePictureUrl} alt={user.name} className="w-6 h-6 rounded-full mr-2" />
+                      <span className="text-sm font-medium">{user.name}</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => removeUserFromInviteList(user._id)}
+                      className="text-red-500 hover:text-red-700 text-sm font-bold"
+                    >
+                      &times;
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+        {/* --- END OF NEW UI --- */}
+
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">Location</label>
           <div className="mt-1 flex rounded-md shadow-sm">
@@ -144,13 +258,13 @@ const PostActivityPage = () => {
         </div>
         <div className="h-64 w-full rounded-lg overflow-hidden border">
            <MapContainer center={[30.7333, 76.7794]} zoom={13} style={{ height: '100%', width: '100%' }}>
-              <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
-              <MapEventsAndMarker 
-                location={location} 
-                onPositionChange={setLocation} 
-                onAddressChange={setLocationText} 
-              />
-          </MapContainer>
+             <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+             <MapEventsAndMarker 
+               location={location} 
+               onPositionChange={setLocation} 
+               onAddressChange={setLocationText} 
+             />
+           </MapContainer>
         </div>
         
         {error && <p className="text-sm text-red-600">{error}</p>}
