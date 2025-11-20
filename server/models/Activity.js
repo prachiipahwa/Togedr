@@ -35,6 +35,7 @@ const ActivitySchema = new mongoose.Schema({
   imageUrl: {
     type: String,
   },
+  // --- THIS IS THE MISSING FIELD ---
   chatRoomID: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'ChatRoom'
@@ -52,24 +53,11 @@ const ActivitySchema = new mongoose.Schema({
       type: [Number],
       required: true,
     }
-  },
-  
-  // --- NEW FIELDS FOR PRIVATE ACTIVITIES ---
-  visibility: {
-    type: String,
-    enum: ['public', 'private'],
-    default: 'public',
-  },
-  invitedUsers: [{
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User',
-  }],
-  // -----------------------------------------
-
+  }
 }, {
   timestamps: true
 });
 
 ActivitySchema.index({ location: '2dsphere' });
 
-module.exports = mongoose.model('Activity', ActivitySchema);
+module.exports = mongoose.model('Activity', ActivitySchema); 
